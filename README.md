@@ -1,3 +1,5 @@
 Este es un programa que sirve en el almacén DIA de Viator para organizar cuanta carga llevarán los camiones al día siguiente. Hace uso de script de Python en el que se le pasan varios Excels y a través de comparaciones y mapeos acaba sacando cuanta cantidad de mercancia lleva
 cada tienda, ya que es necesario para organizar las rutas en función de la capacidad de cada camión y volumen de mercancia que mueva cada tienda, he ido actualizando el script en función de las necesidades del cliente y al final ha acabado automatizando un proceso tedioso
 que se hacía a mano y por tanto, daba mucha posibilidad de fallo a uno en el que se hace de forma automatica cogiendo los datos que envían otros almacenes también.
+
+<img src="dia_logo.png" alt="Logo Dia" width="200">
