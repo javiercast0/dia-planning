@@ -1,98 +1,81 @@
 import openpyxl
-from tkinter import Tk
-from tkinter.filedialog import askopenfilename
+from tkinter import Tk, filedialog
 import datetime
 
-# Función para seleccionar un archivo
+# Funcion para seleccionar archivos.
 def seleccionar_archivo(titulo):
     root = Tk()
     root.withdraw()
-    archivo = askopenfilename(title=titulo, filetypes=[("Excel files", "*.xlsm *.xlsx")])
+    archivo = filedialog.askopenfilename(title=titulo, filetypes=[("Excel files", "*.xlsm *.xlsx")])
     root.destroy()
     return archivo
 
-# Cargar los archivos de origen de forma interactiva
-source_file = seleccionar_archivo("Selecciona el archivo del día actual")
-source_file2 = seleccionar_archivo("Selecciona el archivo del día anterior")
-source_file3 = seleccionar_archivo("Selecciona el archivo de hace 2 días")
-source_file4 = seleccionar_archivo("Selecciona el archivo de volumetría de Jaen")
+#Funcion para generar el mapeo
+def generar_mapeo(hoja, col_busqueda, cols_interes):
+    mapa = {}
+    for row in hoja.iter_rows(min_row=1, max_col=max(cols_interes), values_only=True):
+        clave = row[col_busqueda - 1]
+        if clave:
+            mapa[clave] = {c: row[c-1] for c in cols_interes}
+    return mapa
 
-# Cargamos las hojas de los archivos.
-wb_source = openpyxl.load_workbook(source_file, data_only=True)
-ws_source = wb_source['Resumen']
+# Lista de tiendas que se sirven por la tarde, estas tiendas tienen
+# la fruta en AxC y la carne en AxB
+TIENDAS_TARDE = {7658, 2172, 26054, 2417, 2498, 7345, 2163, 24032, 7401, 7643, 7725, 25010, 26053, 2473}
 
-wb_source2 = openpyxl.load_workbook(source_file2, data_only=True)
-ws_source2 = wb_source2['Resumen']  
+# 1. Selección de archivos
+files = {
+    "actual": seleccionar_archivo("Archivo día actual"),
+    "ayer": seleccionar_archivo("Archivo día anterior"),
+    "hace_2_dias": seleccionar_archivo("Archivo hace 2 días"),
+    "hace_3_dias": seleccionar_archivo("Archivo hace 3 días")
+}
 
-wb_source3 = openpyxl.load_workbook(source_file3, data_only=True)
-ws_source3 = wb_source3['Resumen']
+# 2. Carga de datos
+wbs = {k: openpyxl.load_workbook(v, data_only=True)['Resumen'] for k, v in files.items()}
 
-wb_source4 = openpyxl.load_workbook(source_file4, data_only=True)
-ws_source4 = wb_source4.active
+# 3. Crear mapeos
+mapa_actual = generar_mapeo(wbs["actual"], 4, [17, 18, 23, 24])
+mapa_ayer = generar_mapeo(wbs["ayer"], 4, [21, 22])
+mapa_2_dias = generar_mapeo(wbs["hace_2_dias"], 4, [19, 21, 22])
+mapa_3_dias = generar_mapeo(wbs["hace_3_dias"], 4, [19])
 
-# Crear un nuevo archivo Excel
+# 4. Crear archivo final
 new_wb = openpyxl.Workbook()
-new_ws = new_wb.active
+ws_final = new_wb.active
 
-# Copiar los datos de la columna D7 hacia abajo de la volumetría del día actual.
-# Basicamente conseguimos un listado de tiendas que se servirán al día siguiente.
-row = 7
-col = 4
-while ws_source.cell(row=row, column=col).value is not None:
-    new_ws.cell(row=row-6, column=1, value=ws_source.cell(row=row, column=col).value)
-    row += 1
+# 5. Obtener lista de tiendas
+tiendas = []
+for row in wbs["actual"].iter_rows(min_row=7, min_col=4, max_col=4, values_only=True):
+    if row[0] is None: break
+    tiendas.append(row[0])
 
-# Guardar el nuevo archivo Excel
+# 6. Procesar los datos
+for i, tienda in enumerate(tiendas, start=1):
+    ws_final.cell(row=i, column=1, value=tienda)
+    
+    # --- DATOS FIJOS (Día Actual) ---
+    if tienda in mapa_actual:
+        ws_final.cell(row=i, column=2, value=mapa_actual[tienda][17]) # Area 11
+        ws_final.cell(row=i, column=3, value=mapa_actual[tienda][18]) # Area 31
+        ws_final.cell(row=i, column=8, value=mapa_actual[tienda][23]) # Area 91
+        ws_final.cell(row=i, column=4, value=mapa_actual[tienda][24]) # Area 41
+    
+    # --- Coger datos ---
+    if tienda in TIENDAS_TARDE:
+        if tienda in mapa_2_dias:
+            ws_final.cell(row=i, column=5, value=mapa_2_dias[tienda][19])
+        if tienda in mapa_ayer:
+            ws_final.cell(row=i, column=6, value=mapa_ayer[tienda][21])
+            ws_final.cell(row=i, column=7, value=mapa_ayer[tienda][22])
+    else:
+        if tienda in mapa_3_dias:
+            ws_final.cell(row=i, column=5, value=mapa_3_dias[tienda][19])
+        if tienda in mapa_2_dias:
+            ws_final.cell(row=i, column=6, value=mapa_2_dias[tienda][21])
+            ws_final.cell(row=i, column=7, value=mapa_2_dias[tienda][22])
+
+# 7. Guardar
 fecha_actual = datetime.datetime.now().strftime("%d-%m").lstrip('0')
-new_file = f'Volumetría {fecha_actual} (DRIVE).xlsx'
-new_wb.save(new_file)
-
-# Cargar el nuevo archivo Excel
-wb_final = openpyxl.load_workbook(new_file)
-ws_final = wb_final.active
-
-# Iterar sobre todas las celdas de la columna A en el archivo final.
-# Lo que hará será buscar el valor en la columna D del archivo de volumetrías y obtener el valor 13 celdas a la derecha (que coincide con el 11 del seco)
-# Así con el area 91 (23 celdas a la derecha), 61 y 68 (21 y 22 celdas a la derecha, ya de la volumetría del dia anterior), 51 (19 valores a la derecha, ya de la volumetria
-# de hace dos días) y con la Volumetría de Jaén.
-for row in range(1, ws_final.max_row + 1):
-    value_to_find = ws_final.cell(row=row, column=1).value
-    if value_to_find is None:
-        continue
-    
-    found_value = None
-    for source_row in range(1, ws_source.max_row + 1):
-        if ws_source.cell(row=source_row, column=4).value == value_to_find:
-            found_value = ws_source.cell(row=source_row, column=17).value
-            found_value2 = ws_source.cell(row=source_row, column=23).value
-            if found_value is not None:
-                ws_final.cell(row=row, column=2, value=found_value)
-            if found_value2 is not None:
-                ws_final.cell(row=row, column=3, value=found_value2)
-         
-    found_value = None
-    for source2_row in range(1, ws_source2.max_row + 1):
-        if ws_source2.cell(row=source2_row, column=4).value == value_to_find:
-            found_value = ws_source2.cell(row=source2_row, column=21).value
-            found_value2 = ws_source.cell(row=source2_row, column=22).value
-            if found_value is not None:
-                ws_final.cell(row=row, column=4, value=found_value)
-            if found_value2 is not None:
-                ws_final.cell(row=row, column=5, value=found_value2)
-    
-    found_value = None
-    for source3_row in range(1, ws_source3.max_row + 1):
-        if ws_source3.cell(row=source3_row, column=4).value == value_to_find:
-            found_value = ws_source3.cell(row=source3_row, column=19).value
-            if found_value is not None:
-                ws_final.cell(row=row, column=6, value=found_value)
-    
-    found_value = None
-    for source4_row in range(1, ws_source4.max_row + 1):
-        if ws_source4.cell(row=source4_row, column=4).value == value_to_find:
-            found_value = ws_source4.cell(row=source4_row, column=8).value
-            if found_value is not None:
-                ws_final.cell(row=row, column=7, value=found_value)
-    
-# Guardar los cambios en el archivo
-wb_final.save(new_file)
+new_wb.save(f'Volumetría {fecha_actual} (DRIVE).xlsx')
+print("Proceso finalizado con éxito.")
